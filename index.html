@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="MarkedUp — A premium, professional-grade Vue & Marked.js markdown editor and real-time previewer featuring sync-scrolling, themes, document templates, cheatsheets, and stats.">
+  <title>MarkedUp // Professional Markdown Studio & Live Previewer</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Highlight.js Themes (Loaded dynamically via script, but we include github-dark as default fallback stylesheet) -->
+  <link rel="stylesheet" id="hljs-theme-link" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
+  <!-- Vue 3 Global Build CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+  <!-- Marked.js (Markdown parsing) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- DOMPurify (XSS prevention) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+
+  <!-- Highlight.js (Code block highlighting) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+
+  <div id="app" :class="['app-container', activeTheme]" v-cloak>
+    
+    <!-- Cyberpunk Theme Ambient Glowing Orbs -->
+    <div class="theme-glows" v-if="activeTheme === 'theme-cyberpunk'">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <transition name="toast-slide">
+      <div v-if="toast.show" :class="['toast-notification', 'toast-' + toast.type]" role="status" aria-live="polite">
+        <span class="toast-icon">
+          <svg v-if="toast.type === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <svg v-else-if="toast.type === 'error'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        </span>
+        <span class="toast-message">{{ toast.message }}</span>
+      </div>
+    </transition>
+
+    <!-- Global App Header / Topbar -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-section">
+          <div class="logo-orb"></div>
+          <h1 class="logo-text">Marked<span>Up</span></h1>
+        </div>
+        <div class="doc-badge">
+          <span class="badge-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </span>
+          <input 
+            type="text" 
+            class="doc-title-input" 
+            v-model="documentTitle" 
+            placeholder="untitled.md"
+            title="Edit document name"
+            id="input-doc-title"
+          >
+          <span class="autosave-tag">Saved</span>
+        </div>
+      </div>
+
+      <!-- Controls Panel -->
+      <div class="header-right">
+        
+        <!-- View Mode Selectors -->
+        <div class="control-group" aria-label="View modes">
+          <div class="view-mode-tabs">
+            <button 
+              id="btn-view-split"
+              class="tab-btn" 
+              :class="{ active: viewMode === 'split' }" 
+              @click="viewMode = 'split'"
+              title="Split Screen View"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+              <span>Split</span>
+            </button>
+            <button 
+              id="btn-view-editor"
+              class="tab-btn" 
+              :class="{ active: viewMode === 'editor' }" 
+              @click="viewMode = 'editor'"
+              title="Editor Only View"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+              <span>Editor</span>
+            </button>
+            <button 
+              id="btn-view-preview"
+              class="tab-btn" 
+              :class="{ active: viewMode === 'preview' }" 
+              @click="viewMode = 'preview'"
+              title="Preview Only View"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+              <span>Preview</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Theme Selector Toggle -->
+        <div class="control-group">
+          <div class="theme-dropdown-wrapper">
+            <button 
+              id="btn-theme-dropdown"
+              class="action-btn dropdown-trigger" 
+              @click="toggleThemeMenu"
+              title="Select Visual Workspace Theme"
+              aria-haspopup="listbox"
+              :aria-expanded="showThemeMenu"
+            >
+              <span class="theme-indicator-dot" :class="activeTheme"></span>
+              <span class="theme-label-name">{{ currentThemeName }}</span>
+              <svg class="chevron-icon" :class="{ rotated: showThemeMenu }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            
+            <transition name="dropdown-fade">
+              <div v-if="showThemeMenu" class="dropdown-menu theme-menu" role="listbox" id="menu-themes">
+                <button 
+                  v-for="t in themes" 
+                  :key="t.id"
+                  class="dropdown-item" 
+                  :class="{ selected: activeTheme === t.id }"
+                  @click="selectTheme(t.id)"
+                  role="option"
+                >
+                  <span class="theme-indicator-dot" :class="t.id"></span>
+                  <span class="item-text">{{ t.name }}</span>
+                </button>
+              </div>
+            </transition>
+          </div>
+        </div>
+
+        <!-- Exporters & Actions -->
+        <div class="control-group">
+          <div class="export-dropdown-wrapper">
+            <button 
+              id="btn-export-dropdown"
+              class="action-btn btn-primary dropdown-trigger"
+              @click="toggleExportMenu"
+              title="Export or Download Document"
+              aria-haspopup="listbox"
+              :aria-expanded="showExportMenu"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Export</span>
+              <svg class="chevron-icon" :class="{ rotated: showExportMenu }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            
+            <transition name="dropdown-fade">
+              <div v-if="showExportMenu" class="dropdown-menu export-menu" role="listbox" id="menu-exports">
+                <button class="dropdown-item" @click="exportMarkdown" role="option">
+                  <svg class="item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <div class="item-info">
+                    <span class="item-text">Download Markdown</span>
+                    <span class="item-sub">Save as raw .md file</span>
+                  </div>
+                </button>
+                <button class="dropdown-item" @click="exportHTMLFile" role="option">
+                  <svg class="item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  <div class="item-info">
+                    <span class="item-text">Download Styled HTML</span>
+                    <span class="item-sub">Packaged document file</span>
+                  </div>
+                </button>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item" @click="copyRawMarkdown" role="option">
+                  <svg class="item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <div class="item-info">
+                    <span class="item-text">Copy Raw Source</span>
+                    <span class="item-sub">Copy markdown to clipboard</span>
+                  </div>
+                </button>
+                <button class="dropdown-item" @click="copyCompiledHTML" role="option">
+                  <svg class="item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                  <div class="item-info">
+                    <span class="item-text">Copy Rendered HTML</span>
+                    <span class="item-sub">Copy sanitized HTML output</span>
+                  </div>
+                </button>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item" @click="triggerPrintPDF" role="option">
+                  <svg class="item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                  <div class="item-info">
+                    <span class="item-text">Print / Export PDF</span>
+                    <span class="item-sub">Uses optimized document styling</span>
+                  </div>
+                </button>
+              </div>
+            </transition>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- Main Studio Workspace Grid -->
+    <main class="app-workspace">
+      
+      <!-- IDE Left Navigation Panel -->
+      <aside class="sidebar-tabs-bar">
+        <div class="sidebar-top-tabs">
+          <button 
+            id="tab-cheatsheet"
+            class="sidebar-tab-btn" 
+            :class="{ active: activeSidebar === 'cheatsheet' }" 
+            @click="toggleSidebar('cheatsheet')"
+            title="Markdown Quick Reference Cheat Sheet"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            <span class="tab-label">Cheatsheet</span>
+          </button>
+          <button 
+            id="tab-templates"
+            class="sidebar-tab-btn" 
+            :class="{ active: activeSidebar === 'templates' }" 
+            @click="toggleSidebar('templates')"
+            title="Pre-built Document Boilerplate Library"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span class="tab-label">Templates</span>
+          </button>
+          <button 
+            id="tab-history"
+            class="sidebar-tab-btn" 
+            :class="{ active: activeSidebar === 'history' }" 
+            @click="toggleSidebar('history')"
+            title="Local Version History & Saved Drafts"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/></svg>
+            <span class="tab-label">History</span>
+          </button>
+          <button 
+            id="tab-stats"
+            class="sidebar-tab-btn" 
+            :class="{ active: activeSidebar === 'stats' }" 
+            @click="toggleSidebar('stats')"
+            title="Readability Metrics & Statistics Dashboard"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <span class="tab-label">Stats</span>
+          </button>
+        </div>
+
+        <div class="sidebar-bottom-tabs">
+          <button 
+            id="btn-import-file"
+            class="sidebar-tab-btn secondary-tab" 
+            @click="triggerFileInput"
+            title="Upload/Import Markdown File"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span class="tab-label">Import</span>
+          </button>
+          <input type="file" id="markdown-file-input" class="hidden-file-input" accept=".md,.txt,.markdown" @change="handleFileUpload">
+        </div>
+      </aside>
+
+      <!-- Sidebar Slide Panels -->
+      <transition name="panel-slide">
+        <aside class="sidebar-panel" v-if="activeSidebar !== null">
+          <div class="panel-header">
+            <h2 class="panel-title">{{ sidebarTitle }}</h2>
+            <button class="panel-close-btn" @click="activeSidebar = null" aria-label="Close sidebar panel">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+
+          <!-- Tab Content Panel Wrapper -->
+          <div class="panel-body">
+            
+            <!-- PANEL 1: CHEATSHEET -->
+            <div v-if="activeSidebar === 'cheatsheet'" class="panel-content cheatsheet-panel">
+              <p class="panel-intro-text">Click any syntax pattern below to instantly insert it into the editor at your cursor position.</p>
+              
+              <div v-for="section in cheatsheet" :key="section.category" class="cheatsheet-section">
+                <h3 class="section-title">{{ section.category }}</h3>
+                <div class="cheatsheet-grid">
+                  <button 
+                    v-for="item in section.items" 
+                    :key="item.label"
+                    class="cheat-chip"
+                    @click="insertMarkdown(item.snippet, item.cursorOffset)"
+                    :title="'Insert ' + item.label"
+                  >
+                    <span class="chip-label">{{ item.label }}</span>
+                    <code class="chip-code">{{ item.display }}</code>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANEL 2: TEMPLATE LIBRARY -->
+            <div v-if="activeSidebar === 'templates'" class="panel-content templates-panel">
+              <p class="panel-intro-text">Load a pre-configured template to jumpstart your writing. <strong>Note:</strong> Loading a template will overwrite your current draft.</p>
+              
+              <div class="template-list">
+                <div 
+                  v-for="tpl in templates" 
+                  :key="tpl.id"
+                  class="template-card"
+                  @click="confirmLoadTemplate(tpl)"
+                >
+                  <div class="template-card-header">
+                    <span class="template-icon" v-html="tpl.icon"></span>
+                    <h3 class="template-name">{{ tpl.name }}</h3>
+                  </div>
+                  <p class="template-desc">{{ tpl.description }}</p>
+                  <div class="template-card-footer">
+                    <span class="badge-mini">{{ tpl.tags.join(', ') }}</span>
+                    <span class="action-link">Load Template &rarr;</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANEL 3: VERSION HISTORY -->
+            <div v-if="activeSidebar === 'history'" class="panel-content history-panel">
+              <div class="history-panel-header-actions">
+                <p class="panel-intro-text">Autosaved backup checkpoints. Rolled back versions will be restored instantly.</p>
+                <button class="btn-text-danger" @click="clearHistoryList" v-if="history.length > 0">Clear All</button>
+              </div>
+
+              <div class="history-list">
+                <div 
+                  v-for="(draft, idx) in history" 
+                  :key="draft.timestamp"
+                  class="history-card"
+                  @click="loadHistoryDraft(draft)"
+                >
+                  <div class="history-card-header">
+                    <span class="history-time">{{ formatHistoryTime(draft.timestamp) }}</span>
+                    <span class="history-badge" v-if="idx === 0">Current</span>
+                  </div>
+                  <p class="history-preview-text">{{ draft.preview }}</p>
+                  <div class="history-card-meta">
+                    <span>{{ draft.wordCount }} words</span>
+                    <span>{{ draft.charCount }} characters</span>
+                  </div>
+                </div>
+
+                <div v-if="history.length === 0" class="empty-state">
+                  <div class="empty-state-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  </div>
+                  <p class="empty-state-title">No Drafts Saved Yet</p>
+                  <p class="empty-state-desc">Start typing in the editor! We will autosave your progress every 30 seconds and keep a timeline here.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANEL 4: STATS METRICS -->
+            <div v-if="activeSidebar === 'stats'" class="panel-content stats-panel">
+              <p class="panel-intro-text">Real-time dynamic lexical audit and readability diagnostics.</p>
+              
+              <div class="stats-grid">
+                <div class="stat-box">
+                  <span class="stat-num">{{ stats.words }}</span>
+                  <span class="stat-label">Words</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-num">{{ stats.chars }}</span>
+                  <span class="stat-label">Characters</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-num">{{ stats.lines }}</span>
+                  <span class="stat-label">Lines</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-num">{{ stats.readingTime }}<span class="unit-min">m</span></span>
+                  <span class="stat-label">Estimated Reading</span>
+                </div>
+              </div>
+
+              <!-- Readability Meter Section -->
+              <div class="readability-section card-like">
+                <h3 class="section-title">Readability Diagnostics</h3>
+                
+                <div class="readability-meter-wrapper">
+                  <div class="meter-bar">
+                    <div class="meter-fill" :style="readabilityMeterStyle"></div>
+                  </div>
+                  <div class="meter-score-row">
+                    <span class="readability-score-val">Grade Level: {{ stats.readabilityGrade }}</span>
+                    <span class="readability-label-badge" :class="stats.readabilityClass">{{ stats.readabilityLabel }}</span>
+                  </div>
+                </div>
+
+                <div class="lexical-details">
+                  <div class="lexical-row">
+                    <span class="lex-label">Paragraphs</span>
+                    <span class="lex-val">{{ stats.paragraphs }}</span>
+                  </div>
+                  <div class="lexical-row">
+                    <span class="lex-label">Sentences</span>
+                    <span class="lex-val">{{ stats.sentences }}</span>
+                  </div>
+                  <div class="lexical-row">
+                    <span class="lex-label">Avg. Word Length</span>
+                    <span class="lex-val">{{ stats.avgWordLen }} chars</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Density Panel -->
+              <div class="keyword-density card-like" v-if="stats.keywords.length > 0">
+                <h3 class="section-title">Key Term Density</h3>
+                <div class="density-list">
+                  <div v-for="kw in stats.keywords" :key="kw.word" class="density-row">
+                    <span class="density-word">"{{ kw.word }}"</span>
+                    <div class="density-bar-track">
+                      <div class="density-bar-fill" :style="{ width: (kw.count / stats.keywords[0].count * 100) + '%' }"></div>
+                    </div>
+                    <span class="density-count">{{ kw.count }}x</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </aside>
+      </transition>
+
+      <!-- Central Editing / Preview split panes container -->
+      <section class="workspace-panes" :class="['mode-' + viewMode, 'ratio-' + layoutRatio]">
+        
+        <!-- PANE A: THE WRITING EDITOR -->
+        <article class="editor-pane" v-show="viewMode === 'split' || viewMode === 'editor'">
+          
+          <!-- Formatting Action Toolbar -->
+          <div class="pane-toolbar editor-toolbar" aria-label="Markdown toolbar formatting options">
+            <div class="toolbar-scroll-wrap">
+              
+              <!-- Formatting Group -->
+              <div class="toolbar-group">
+                <button @click="insertMarkdown('**', '**', 2)" title="Bold Text (Ctrl+B)" class="tool-btn" id="tool-bold">
+                  <strong>B</strong>
+                </button>
+                <button @click="insertMarkdown('*', '*', 1)" title="Italic Text (Ctrl+I)" class="tool-btn" id="tool-italic">
+                  <em>I</em>
+                </button>
+                <button @click="insertMarkdown('~~', '~~', 2)" title="Strikethrough" class="tool-btn" id="tool-strike">
+                  <span style="text-decoration: line-through;">S</span>
+                </button>
+                <button @click="insertMarkdown('`', '`', 1)" title="Inline Code block (Ctrl+K)" class="tool-btn font-mono" id="tool-code-inline">
+                  &lt;&gt;
+                </button>
+              </div>
+
+              <div class="toolbar-divider"></div>
+
+              <!-- Block Group -->
+              <div class="toolbar-group">
+                <button @click="insertMarkdown('# ', '', 0)" title="Heading 1" class="tool-btn" id="tool-h1">H1</button>
+                <button @click="insertMarkdown('## ', '', 0)" title="Heading 2" class="tool-btn" id="tool-h2">H2</button>
+                <button @click="insertMarkdown('### ', '', 0)" title="Heading 3" class="tool-btn" id="tool-h3">H3</button>
+              </div>
+
+              <div class="toolbar-divider"></div>
+
+              <!-- Insert Elements Group -->
+              <div class="toolbar-group">
+                <button @click="insertMarkdown('[', '](https://)', 1)" title="Insert Hyperlink" class="tool-btn" id="tool-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                </button>
+                <button @click="insertMarkdown('![Alt Text](', ')', 1)" title="Insert Image Link" class="tool-btn" id="tool-image">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </button>
+                <button @click="insertMarkdown('> ', '', 0)" title="Insert Blockquote" class="tool-btn" id="tool-quote">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </button>
+                <button @click="insertCodeBlock" title="Insert Multi-line Code Block" class="tool-btn" id="tool-code-block">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                </button>
+              </div>
+
+              <div class="toolbar-divider"></div>
+
+              <!-- Structures Group -->
+              <div class="toolbar-group">
+                <button @click="insertMarkdown('- ', '', 0)" title="Unordered Bullet List" class="tool-btn" id="tool-list-bullet">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                </button>
+                <button @click="insertMarkdown('1. ', '', 0)" title="Numbered Ordered List" class="tool-btn" id="tool-list-number">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+                </button>
+                <button @click="insertMarkdown('- [ ] ', '', 0)" title="Interactive Task Checklist" class="tool-btn" id="tool-list-task">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><polyline points="9 11 12 14 22 4"/></svg>
+                </button>
+                <button @click="insertTable" title="Insert Standard Markdown Grid Table" class="tool-btn" id="tool-table">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                </button>
+                <button @click="insertMarkdown('\n---\n', '', 0)" title="Horizontal Separator Line" class="tool-btn" id="tool-hr">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+              </div>
+
+              <div class="toolbar-divider"></div>
+
+              <!-- Utilities Group -->
+              <div class="toolbar-group">
+                <button @click="triggerClearConfirm" title="Clear Editor" class="tool-btn danger-btn" id="tool-clear">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </button>
+              </div>
+
+            </div>
+
+            <!-- Ratio control tabs in split view -->
+            <div class="ratio-pill-tabs" v-if="viewMode === 'split'">
+              <button class="ratio-tab-btn" :class="{ active: layoutRatio === 'narrow' }" @click="layoutRatio = 'narrow'" title="Narrow Editor / Wide Preview (1:2)">3:7</button>
+              <button class="ratio-tab-btn" :class="{ active: layoutRatio === 'equal' }" @click="layoutRatio = 'equal'" title="Equal Split Screen (1:1)">5:5</button>
+              <button class="ratio-tab-btn" :class="{ active: layoutRatio === 'wide' }" @click="layoutRatio = 'wide'" title="Wide Editor / Narrow Preview (2:1)">7:3</button>
+            </div>
+          </div>
+
+          <!-- The Text Editing Area with custom overlay options -->
+          <div class="textarea-container">
+            <div class="textarea-scroller" ref="editorScroller" @scroll="handleEditorScroll">
+              <textarea 
+                ref="markdownTextarea"
+                class="markdown-editor-input"
+                v-model="markdownInput"
+                placeholder="Write your markdown here... Click templates for boilerplates or toggle cheatsheet for standard syntax guide."
+                @keydown="handleTextareaKeydown"
+                @focus="scrollTarget = 'editor'"
+                id="input-markdown-editor"
+                aria-label="Markdown raw content input"
+              ></textarea>
+            </div>
+          </div>
+
+          <!-- Input Footer Status Bar -->
+          <footer class="pane-footer editor-footer">
+            <div class="footer-left">
+              <span>Lines: {{ stats.lines }}</span>
+              <span>Words: {{ stats.words }}</span>
+            </div>
+            <div class="footer-right">
+              <span class="keyboard-hint">Press <strong>Tab</strong> for indent, <strong>Ctrl+S</strong> to download</span>
+            </div>
+          </footer>
+        </article>
+
+        <!-- PANE B: THE COMPILED RENDERED PREVIEW -->
+        <article class="preview-pane" v-show="viewMode === 'split' || viewMode === 'preview'">
+          
+          <!-- Rendered Toolbar -->
+          <div class="pane-toolbar preview-toolbar">
+            <div class="toolbar-title-row">
+              <div class="pulse-indicator"></div>
+              <h2 class="toolbar-pane-title">Live Preview</h2>
+            </div>
+            
+            <div class="preview-actions">
+              <!-- Sync Scroll Lock -->
+              <button 
+                id="btn-toggle-scroll-sync"
+                class="icon-action-btn-mini" 
+                :class="{ active: syncScroll }" 
+                @click="syncScroll = !syncScroll"
+                :title="syncScroll ? 'Disable Real-time Scroll Synchronization' : 'Enable Real-time Scroll Synchronization'"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 2.1H3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-14a2 2 0 0 0-2-2z"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+                <span class="btn-tooltip-text">Scroll Sync</span>
+              </button>
+
+              <!-- Copy HTML -->
+              <button 
+                id="btn-copy-preview-html"
+                class="icon-action-btn-mini" 
+                @click="copyCompiledHTML" 
+                title="Copy rendered HTML element markup"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              </button>
+
+              <!-- View HTML Source Code Toggle -->
+              <button 
+                id="btn-toggle-html-source"
+                class="icon-action-btn-mini" 
+                :class="{ active: showHTMLSource }" 
+                @click="showHTMLSource = !showHTMLSource"
+                title="Toggle compiled HTML source code viewer"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- HTML Source Code View or Rendered Markdown Panel -->
+          <div class="preview-scroll-container" ref="previewScroller" @scroll="handlePreviewScroll" @mouseenter="scrollTarget = 'preview'">
+            
+            <!-- Standard Compiled Rendered Markdown Panel -->
+            <div 
+              v-if="!showHTMLSource"
+              class="markdown-preview-output markdown-rendered-body" 
+              v-html="renderedMarkdown"
+              @click="handlePreviewClick"
+              id="rendered-preview-content"
+            ></div>
+
+            <!-- Developer Compiled Raw HTML Output Viewer -->
+            <div v-else class="html-source-container">
+              <pre class="html-source-block"><code class="language-html">{{ cleanHTMLSourceCode }}</code></pre>
+            </div>
+
+          </div>
+
+          <!-- Preview Pane Footer metrics -->
+          <footer class="pane-footer preview-footer">
+            <div class="footer-left">
+              <span>Readability: <strong class="badge-mini" :class="stats.readabilityClass">{{ stats.readabilityLabel }}</strong></span>
+            </div>
+            <div class="footer-right">
+              <span>Flesch score: {{ stats.readabilityFlesch }}</span>
+            </div>
+          </footer>
+        </article>
+
+      </section>
+    </main>
+
+    <!-- Custom Modal Dialog boxes -->
+    
+    <!-- Restructure Overwrite Draft Template confirmation dialog -->
+    <dialog id="confirmModal" class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Overwrite Current Draft?</h3>
+      </div>
+      <div class="modal-body">
+        <p>Loading the template <strong>"{{ selectedTemplateToLoad?.name }}"</strong> will overwrite all content inside your editor. Any unsaved edits will be lost.</p>
+        <p class="text-secondary-label">If you want to keep your active writing draft, please copy it to your clipboard or download it as a markdown file before continuing.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" @click="closeConfirmModal">Cancel</button>
+        <button class="btn-primary btn-danger" @click="executeLoadTemplate">Overwrite & Load</button>
+      </div>
+    </dialog>
+
+    <!-- Clear Editor confirmation dialog -->
+    <dialog id="clearConfirmModal" class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Clear Active Editor?</h3>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to permanently clear all text from the editor? This cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" @click="closeClearModal">Cancel</button>
+        <button class="btn-primary btn-danger" @click="executeClearEditor">Permanently Delete</button>
+      </div>
+    </dialog>
+
+  </div>
+
+  <!-- Core Javascript code -->
+  <script src="app.js"></script>
+</body>
+</html>
